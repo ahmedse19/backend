@@ -106,7 +106,6 @@ const getDayLogs = async (id, date, params) => {
 const getWorkHours = async (id, date, params, boolcheck) => {
   const data = await getDayLogs(id, date, params);
 
-  console.log(data);
   const rows = data.data;
 
   let neutral = 0;
@@ -143,7 +142,6 @@ const getdashboardData = async (req, res) => {
   const employees = await getEmployees();
 
   for (const employe of employees) {
-    console.log(employe);
     const data = await getWorkHours(employe.id_employee, date, params, false);
     employe.workhours = data.workhours.toHHMM();
     employe.start = data.start;
@@ -162,8 +160,6 @@ const getEmployeedata = async (req, res) => {
   const myemployee = await getEmployees(id);
 
   const resultdata = await getWorkHours(id, date, params, true);
-
-  console.log(resultdata);
 
   res.json({ ...myemployee, ...resultdata });
 };
