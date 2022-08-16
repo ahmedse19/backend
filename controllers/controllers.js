@@ -28,18 +28,24 @@ Number.prototype.toHHMM = function () {
 
 const query = util.promisify(connection.query).bind(connection);
 
-const getIntervalQuery = (date, params) => {
+const getIntervalQuery = (params, firstdate, seconddate) => {
   let start = null;
   let end = null;
-  if (date === undefined && params === "day") {
-    const mydate = new Date();
-    mydate.setDate(mydate.getDate() - 1);
-    return getIntervalQuery(mydate, params);
-  }
   if (params === "day") {
-    const daydate = new Date(date);
-    start = startOfDay(daydate);
-    end = endOfDay(daydate);
+    function isBusinessDay(date) {
+      let day = date.getDay();
+      if (day == 0 || day == 6) {
+        return false;
+      }
+      return true;
+    }
+    let businessDay = new Date();
+    while (!isBusinessDay(businessDay)) {
+      date.setDate(date.getDate() - 1);
+    }
+
+    start = startOfDay(businessDay);
+    end = endOfDay(businessDay);
   } else if (params === "week") {
     let date = new Date();
     date.setDate(date.getDate() + -6);
@@ -50,6 +56,16 @@ const getIntervalQuery = (date, params) => {
     date.setMonth(date.getMonth() - 1);
     start = startOfMonth(date);
     end = endOfMonth(date);
+  }
+  if (
+    params === "custom" &&
+    firstdate !== undefined &&
+    seconddate !== undefined
+  ) {
+    start = new Date(firstdate);
+    end = new Date(seconddate);
+    start = startOfDay(start);
+    end = endOfDay(end);
   }
 
   start = fecha.format(start, "YYYY-MM-DD HH:mm:ss");
@@ -67,11 +83,13 @@ const getEmployees = async (id) => {
   try {
     if (id === undefined) {
       const rows = await query(`select *  from employee  `);
+
       return rows;
     } else {
       const rows = await query(
         `select *  from employee where id_employee = ${id} `
       );
+
       return rows;
     }
   } catch (error) {
@@ -79,14 +97,14 @@ const getEmployees = async (id) => {
   }
 };
 
-const getDayLogs = async (id, date, params) => {
+const getDayLogs = async (id, params, firstDate, endDate) => {
   try {
-    const resultObject = getIntervalQuery(date, params);
+    const resultObject = getIntervalQuery(params, firstDate, endDate);
 
     const rows =
       await query(`select date_de_deplacement,TYPE,id_portail  from (pointage,employee,badges) WHERE pointage.id_badge=badges.id_badge AND 
   employee.id_employee = badges.id_employee AND employee.id_employee =${id} AND ${resultObject.result} `);
-
+    if (rows.length === 0) return null;
     rows.sort(
       (a, b) =>
         new Date(a.date_de_deplacement) - new Date(b.date_de_deplacement)
@@ -103,9 +121,9 @@ const getDayLogs = async (id, date, params) => {
   }
 };
 
-const getWorkHours = async (id, date, params, boolcheck) => {
-  const data = await getDayLogs(id, date, params);
-
+const getWorkHours = async (id, params, boolcheck, firstDate, endDate) => {
+  const data = await getDayLogs(id, params, firstDate, endDate);
+  if (data === null) return null;
   const rows = data.data;
 
   let neutral = 0;
@@ -129,21 +147,32 @@ const getWorkHours = async (id, date, params, boolcheck) => {
     throw new Error("not all entries are paired with exits");
   }
 
-  if (boolcheck) return { ...data, workhours: working.toHHMM() };
-  else return { workhours: working.toHHMM(), start: data.start, end: data.end };
+  if (boolcheck) return { ...data, workhours: working };
+  else return { workhours: working, start: data.start, end: data.end };
 };
 
 const getdashboardData = async (req, res) => {
   const requestdata = req.query;
 
-  const date = requestdata.date;
+  const firstDate = requestdata.startDate;
+  const endDate = requestdata.endDate;
   const params = requestdata.params;
-
+  console.log(requestdata);
   const employees = await getEmployees();
-
+  if (employees === null) {
+    res.json({ error: "no employees found" });
+    return;
+  }
   for (const employe of employees) {
-    const data = await getWorkHours(employe.id_employee, date, params, false);
-    employe.workhours = data.workhours.toHHMM();
+    const data = await getWorkHours(
+      employe.id_employee,
+      params,
+      false,
+      firstDate,
+      endDate
+    );
+    if (data === null) continue;
+    employe.workhours = data.workhours;
     employe.start = data.start;
     employe.end = data.end;
   }
@@ -154,13 +183,17 @@ const getdashboardData = async (req, res) => {
 const getEmployeedata = async (req, res) => {
   const requestdata = req.query;
   const id = requestdata.id;
-  const date = new Date(requestdata.date);
+  const firstDate = new Date(requestdata.firstDate);
+  const endDate = new Date(requestdata.endDate);
   const params = requestdata.params;
 
   const myemployee = await getEmployees(id);
 
-  const resultdata = await getWorkHours(id, date, params, true);
-
+  const resultdata = await getWorkHours(id, params, true, firstDate, endDate);
+  if (resultdata === null) {
+    res.json(null);
+    return;
+  }
   res.json({ ...myemployee, ...resultdata });
 };
 
