@@ -100,11 +100,13 @@ const getEmployees = async (id) => {
 const getDayLogs = async (id, params, firstDate, endDate) => {
   try {
     const resultObject = getIntervalQuery(params, firstDate, endDate);
-
+    console.log(resultObject);
+    console.log("ahmed");
     const rows =
       await query(`select date_de_deplacement,TYPE,id_portail  from (pointage,employee,badges) WHERE pointage.id_badge=badges.id_badge AND 
   employee.id_employee = badges.id_employee AND employee.id_employee =${id} AND ${resultObject.result} `);
-    if (rows.length === 0) return null;
+    if (rows.length === 0)
+      return { firstDate: resultObject.start, endDate: resultObject.end };
     rows.sort(
       (a, b) =>
         new Date(a.date_de_deplacement) - new Date(b.date_de_deplacement)
@@ -112,8 +114,8 @@ const getDayLogs = async (id, params, firstDate, endDate) => {
 
     return {
       data: rows,
-      start: resultObject.start,
-      end: resultObject.end,
+      firstDate: resultObject.start,
+      endDate: resultObject.end,
     };
   } catch (e) {
     console.log("could not get daily logs");
@@ -123,7 +125,9 @@ const getDayLogs = async (id, params, firstDate, endDate) => {
 
 const getWorkHours = async (id, params, boolcheck, firstDate, endDate) => {
   const data = await getDayLogs(id, params, firstDate, endDate);
-  if (data === null) return null;
+
+  if (data.data === undefined)
+    return { firstDate: data.firstDate, endDate: data.endDate };
   const rows = data.data;
 
   let neutral = 0;
@@ -148,13 +152,17 @@ const getWorkHours = async (id, params, boolcheck, firstDate, endDate) => {
   }
 
   if (boolcheck) return { ...data, workhours: working };
-  else return { workhours: working, start: data.start, end: data.end };
+  else
+    return {
+      workhours: working,
+      firstDate: data.firstDate,
+      endDate: data.endDate,
+    };
 };
 
 const getdashboardData = async (req, res) => {
   const requestdata = req.query;
-
-  const firstDate = requestdata.startDate;
+  const firstDate = requestdata.firstDate;
   const endDate = requestdata.endDate;
   const params = requestdata.params;
   console.log(requestdata);
@@ -171,10 +179,11 @@ const getdashboardData = async (req, res) => {
       firstDate,
       endDate
     );
-    if (data === null) continue;
+
+    employe.start = data.firstDate;
+    employe.end = data.endDate;
+    if (data.workhours === null) continue;
     employe.workhours = data.workhours;
-    employe.start = data.start;
-    employe.end = data.end;
   }
 
   res.json(employees);
